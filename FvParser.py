@@ -12,7 +12,6 @@ if __name__ == '__main__':
       FvBlockMap = []
       if data == Signature:
         fvCnt += 1
-        print('Fv Offset: ' + hex(blkOffset))
         f.seek(blkOffset)
         ZeroVector, Guid, FvLength, Sig, Attribute, HeaderLength, Checksum, ExtHeaderOffset, Reserved, Revision = \
           f.read(16), f.read(16), f.read(8), f.read(4), f.read(4), f.read(2), f.read(2), f.read(2), f.read(1), f.read(1)
@@ -33,6 +32,15 @@ if __name__ == '__main__':
                                          'Reserved': Reserved,
                                          'Revision': Revision,
                                          'FvBlockMap': FvBlockMap}})
+
+        print('Fv Offset: ' + hex(blkOffset))
+        print('ExtHeaderOffset: ' + ExtHeaderOffset[::-1].hex())
+
+        # Check extended header
+        if (int(ExtHeaderOffset[::-1].hex(), 16) != 0):
+          f.seek(blkOffset + int(ExtHeaderOffset[::-1].hex(), 16))
+          FvName, ExtHeaderSize = f.read(16), f.read(4)
+          print(FvName, ExtHeaderSize)
 
         # Save FVs to file
         # f.seek(blkOffset)
