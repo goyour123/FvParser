@@ -1,0 +1,11 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# Editor specific
+.vscode/*
+
+# Output files
+*.fv
+
+# User-specific files
+*.fd
