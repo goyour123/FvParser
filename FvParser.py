@@ -23,14 +23,14 @@ if __name__ == '__main__':
         # Update FV Header to dict
         fvDict.update({'Fv'+str(fvCnt): {'ZeroVector': ZeroVector, \
                                          'Guid': Guid, \
-                                         'FvLength': FvLength, \
+                                         'FvLength': hex(int(FvLength[::-1].hex(), 16)), \
                                          'Signature': Sig, \
-                                         'Attribute': Attribute, \
-                                         'HeaderLength': HeaderLength,
-                                         'Checksum': Checksum,
-                                         'ExtHeaderOffset': ExtHeaderOffset,
+                                         'Attribute': Attribute[::-1].hex(), \
+                                         'HeaderLength': hex(int(HeaderLength[::-1].hex(), 16)),
+                                         'Checksum': hex(int(Checksum[::-1].hex(), 16)),
+                                         'ExtHeaderOffset': hex(int(ExtHeaderOffset[::-1].hex(), 16)),
                                          'Reserved': Reserved,
-                                         'Revision': Revision,
+                                         'Revision': hex(int(Revision.hex(), 16)),
                                          'FvBlockMap': FvBlockMap}})
 
         print('Fv Offset: ' + hex(blkOffset))
