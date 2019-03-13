@@ -6,6 +6,7 @@ if __name__ == '__main__':
   fvDict = dict()
   with open(sys.argv[1], 'rb') as f:
     fvCnt = 0
+    binName = os.path.splitext(os.path.basename(sys.argv[1]))[0]
     for blkOffset in range(0, fSize, blkSize):
       f.seek(blkOffset + sigOffset)
       data = f.read(len(Signature))
@@ -43,9 +44,10 @@ if __name__ == '__main__':
           print(FvName, ExtHeaderSize)
 
         # Save FVs to file
-        # f.seek(blkOffset)
-        # fv = f.read(int(FvLength[::-1].hex(), 16))
-        # fvName = 'Fv_' + str(hex(blkOffset)) + '.fv'
-        # with open(fvName, 'wb') as fvFile:
-        #   fvFile.write(fv)
+        if sys.argv[2] == '-s':
+          f.seek(blkOffset)
+          fv = f.read(int(FvLength[::-1].hex(), 16))
+          fvName = binName+ '_' + str(hex(blkOffset)) + '.fv'
+          with open(fvName, 'wb') as fvFile:
+            fvFile.write(fv)
   print(fvDict)
