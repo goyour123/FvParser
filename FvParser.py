@@ -1,5 +1,11 @@
 import sys, os
 
+def RawGuid2Readable(rawGuidBytes):
+  return rawGuid[3::-1].hex() + '-' + \
+         rawGuid[5:3:-1].hex() + '-' + \
+         rawGuid[7:5:-1].hex() + '-' + \
+         rawGuid[8:10].hex() + '-' + rawGuid[10:16].hex()
+
 if __name__ == '__main__':
   Signature, sigOffset = b'_FVH', 40
   fSize, blkSize = os.stat(sys.argv[1]).st_size, 0x1000
@@ -14,7 +20,7 @@ if __name__ == '__main__':
       if data == Signature:
         fvCnt += 1
         f.seek(blkOffset)
-        ZeroVector, Guid, FvLength, Sig, Attribute, HeaderLength, Checksum, ExtHeaderOffset, Reserved, Revision = \
+        ZeroVector, rawGuid, FvLength, Sig, Attribute, HeaderLength, Checksum, ExtHeaderOffset, Reserved, Revision = \
           f.read(16), f.read(16), f.read(8), f.read(4), f.read(4), f.read(2), f.read(2), f.read(2), f.read(1), f.read(1)
 
         while (len(FvBlockMap) == 0) or ((int(FvBlockMap[-1][0],16), int(FvBlockMap[-1][1],16)) != (0, 0)):
@@ -23,7 +29,7 @@ if __name__ == '__main__':
 
         # Update FV Header to dict
         fvDict.update({'Fv'+str(fvCnt): {'ZeroVector': ZeroVector, \
-                                         'Guid': Guid, \
+                                         'Guid': RawGuid2Readable(rawGuid), \
                                          'FvLength': hex(int(FvLength[::-1].hex(), 16)), \
                                          'Signature': Sig, \
                                          'Attribute': Attribute[::-1].hex(), \
