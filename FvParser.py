@@ -44,10 +44,15 @@ if __name__ == '__main__':
           print(FvName, ExtHeaderSize)
 
         # Save FVs to file
-        if sys.argv[2] == '-s':
-          f.seek(blkOffset)
-          fv = f.read(int(FvLength[::-1].hex(), 16))
-          fvName = binName+ '_' + str(hex(blkOffset)) + '.fv'
-          with open(fvName, 'wb') as fvFile:
-            fvFile.write(fv)
+        try:
+          sys.argv[2]
+        except:
+          pass
+        else:
+          if sys.argv[2] == '-s':
+            f.seek(blkOffset)
+            fv = f.read(int(FvLength[::-1].hex(), 16))
+            fvName = binName+ '_' + str(hex(blkOffset)) + '.fv'
+            with open(fvName, 'wb') as fvFile:
+              fvFile.write(fv)
   print(fvDict)
