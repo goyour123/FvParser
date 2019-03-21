@@ -1,10 +1,13 @@
 import sys, os
 
 def RawGuid2Readable(rawGuidBytes):
-  return rawGuid[3::-1].hex() + '-' + \
-         rawGuid[5:3:-1].hex() + '-' + \
-         rawGuid[7:5:-1].hex() + '-' + \
-         rawGuid[8:10].hex() + '-' + rawGuid[10:16].hex()
+  return rawGuidBytes[3::-1].hex() + '-' + \
+         rawGuidBytes[5:3:-1].hex() + '-' + \
+         rawGuidBytes[7:5:-1].hex() + '-' + \
+         rawGuidBytes[8:10].hex() + '-' + rawGuidBytes[10:16].hex()
+
+def RawBytes2Readable(rawBytes):
+  return hex(int(rawBytes[::-1].hex(), 16))
 
 if __name__ == '__main__':
   Signature, sigOffset = b'_FVH', 40
@@ -30,24 +33,24 @@ if __name__ == '__main__':
         # Update FV Header to dict
         fvDict.update({'Fv'+str(fvCnt): {'ZeroVector': ZeroVector, \
                                          'Guid': RawGuid2Readable(rawGuid), \
-                                         'FvLength': hex(int(FvLength[::-1].hex(), 16)), \
+                                         'FvLength': RawBytes2Readable(FvLength), \
                                          'Signature': Sig, \
                                          'Attribute': Attribute[::-1].hex(), \
-                                         'HeaderLength': hex(int(HeaderLength[::-1].hex(), 16)),
-                                         'Checksum': hex(int(Checksum[::-1].hex(), 16)),
-                                         'ExtHeaderOffset': hex(int(ExtHeaderOffset[::-1].hex(), 16)),
+                                         'HeaderLength': RawBytes2Readable(HeaderLength),
+                                         'Checksum': RawBytes2Readable(Checksum),
+                                         'ExtHeaderOffset': RawBytes2Readable(ExtHeaderOffset),
                                          'Reserved': Reserved,
-                                         'Revision': hex(int(Revision.hex(), 16)),
+                                         'Revision': RawBytes2Readable(Revision),
                                          'FvBlockMap': FvBlockMap}})
 
         print('Fv Offset: ' + hex(blkOffset))
-        print('ExtHeaderOffset: ' + ExtHeaderOffset[::-1].hex())
 
         # Check extended header
         if (int(ExtHeaderOffset[::-1].hex(), 16) != 0):
           f.seek(blkOffset + int(ExtHeaderOffset[::-1].hex(), 16))
           FvName, ExtHeaderSize = f.read(16), f.read(4)
-          print(FvName, ExtHeaderSize)
+          fvDict['Fv'+str(fvCnt)].update({'ExtFvName': RawGuid2Readable(FvName), \
+                                          'ExtHeaderSize': RawBytes2Readable(ExtHeaderSize)})
 
         # Save FVs to file
         try:
@@ -61,4 +64,5 @@ if __name__ == '__main__':
             fvName = binName+ '_' + str(hex(blkOffset)) + '.fv'
             with open(fvName, 'wb') as fvFile:
               fvFile.write(fv)
-  print(fvDict)
+  for i in fvDict:
+    print(fvDict[i])
