@@ -9,6 +9,9 @@ def RawGuid2Readable(rawGuidBytes):
 def RawBytes2Readable(rawBytes):
   return hex(int(rawBytes[::-1].hex(), 16))
 
+def RawBytes2Hex(rawBytes):
+  return int(rawBytes[::-1].hex(), 16)
+
 if __name__ == '__main__':
   Signature, sigOffset = b'_FVH', 40
   fSize, blkSize = os.stat(sys.argv[1]).st_size, 0x1000
@@ -51,6 +54,22 @@ if __name__ == '__main__':
           FvName, ExtHeaderSize = f.read(16), f.read(4)
           fvDict['Fv'+str(fvCnt)].update({'ExtFvName': RawGuid2Readable(FvName), \
                                           'ExtHeaderSize': RawBytes2Readable(ExtHeaderSize)})
+          
+          ExtEntrySize, ExtEntryType = f.read(2), f.read(2)
+          if RawBytes2Hex(ExtEntryType) == 0x1:
+            # EFI_FV_EXT_TYPE_OEM_TYPE
+            pass
+          elif RawBytes2Hex(ExtEntryType) == 0x2:
+            # EFI_FV_EXT_TYPE_GUID_TYPE
+            pass
+          elif RawBytes2Hex(ExtEntryType) == 0x3:
+            # EFI_FV_EXT_TYPE_USED_SIZE_TYPE
+            pass
+          elif RawBytes2Hex(ExtEntryType) == 0xffff:
+            fvDict['Fv'+str(fvCnt)].update({'ExtEntrySize': RawBytes2Readable(ExtEntrySize), \
+                                            'ExtEntryType': RawBytes2Readable(ExtEntryType)})
+          else:
+            pass
 
         # Save FVs to file
         try:
