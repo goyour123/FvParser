@@ -1,10 +1,9 @@
 import sys, os
+import uuid
 
-def RawGuid2Readable(rawGuidBytes):
-  return rawGuidBytes[3::-1].hex() + '-' + \
-         rawGuidBytes[5:3:-1].hex() + '-' + \
-         rawGuidBytes[7:5:-1].hex() + '-' + \
-         rawGuidBytes[8:10].hex() + '-' + rawGuidBytes[10:16].hex()
+def RawGuid2Uuid(rawGuidBytes):
+  return uuid.UUID(bytes=rawGuidBytes[3::-1] + rawGuidBytes[5:3:-1] + \
+                         rawGuidBytes[7:5:-1] + rawGuidBytes[8:10] + rawGuidBytes[10:16])
 
 def RawBytes2Readable(rawBytes):
   return hex(int(rawBytes[::-1].hex(), 16))
@@ -35,7 +34,7 @@ if __name__ == '__main__':
 
         # Update FV Header to dict
         fvDict.update({'Fv'+str(fvCnt): {'ZeroVector': ZeroVector, \
-                                         'Guid': RawGuid2Readable(rawGuid), \
+                                         'Guid': str(RawGuid2Uuid(rawGuid)), \
                                          'FvLength': RawBytes2Readable(FvLength), \
                                          'Signature': Sig, \
                                          'Attribute': Attribute[::-1].hex(), \
@@ -52,7 +51,7 @@ if __name__ == '__main__':
         if (int(ExtHeaderOffset[::-1].hex(), 16) != 0):
           f.seek(blkOffset + int(ExtHeaderOffset[::-1].hex(), 16))
           FvName, ExtHeaderSize = f.read(16), f.read(4)
-          fvDict['Fv'+str(fvCnt)].update({'ExtFvName': RawGuid2Readable(FvName), \
+          fvDict['Fv'+str(fvCnt)].update({'ExtFvName': str(RawGuid2Uuid(FvName)), \
                                           'ExtHeaderSize': RawBytes2Readable(ExtHeaderSize)})
           
           ExtEntrySize, ExtEntryType = f.read(2), f.read(2)
@@ -70,6 +69,12 @@ if __name__ == '__main__':
                                             'ExtEntryType': RawBytes2Readable(ExtEntryType)})
           else:
             pass
+
+        # Check EFI_FFS_FILE_HEADER
+        if (RawGuid2Uuid(rawGuid) == uuid.UUID('{5473C07A-3DCB-4dca-BD6F-1E9689E7349A}')):
+          # EFI_FIRMWARE_FILE_SYSTEM3_GUID
+          ffsName, ffsIntegrityCheck, ffsFileType, ffsFileAttr, ffsFileSize, ffsFileState = \
+            f.read(16), f.read(2), f.read(1), f.read(1), f.read(3), f.read(1)
 
         # Save FVs to file
         try:
