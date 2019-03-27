@@ -75,6 +75,20 @@ if __name__ == '__main__':
           # EFI_FIRMWARE_FILE_SYSTEM3_GUID
           ffsName, ffsIntegrityCheck, ffsFileType, ffsFileAttr, ffsFileSize, ffsFileState = \
             f.read(16), f.read(2), f.read(1), f.read(1), f.read(3), f.read(1)
+          fvDict['Fv'+str(fvCnt)].update({'Ffs': {'Name': str(RawGuid2Uuid(ffsName)),
+                                                  'IntegrityCheck': ffsIntegrityCheck[::-1].hex(),
+                                                  'Type': ffsFileType.hex(),
+                                                  'Attributes': ffsFileAttr[::-1].hex(),
+                                                  'Size': ffsFileSize[::-1].hex(),
+                                                  'State': ffsFileState.hex()}})
+          # Check FFS_ATTRIB_LARGE_FILE
+          if RawBytes2Hex(ffsFileAttr) & 0x01:
+            # EFI_FFS_FILE_HEADER2
+            ffsExtendedSize = f.read(8)
+            fvDict['Fv'+str(fvCnt)].update({'Ffs': {'ExtendedSize': RawBytes2Readable(ffsExtendedSize)}})
+          else:
+            # EFI_FFS_FILE_HEADER
+            pass
 
         # Save FVs to file
         try:
