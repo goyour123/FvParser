@@ -90,6 +90,16 @@ if __name__ == '__main__':
             # EFI_FFS_FILE_HEADER
             pass
 
+        # Parse EFI_COMMON_SECTION_HEADER
+        sectSize, sectType = f.read(3), f.read(1)
+        fvDict['Fv'+str(fvCnt)].update({'Ffs': {'sectSize': sectSize[::-1].hex(), \
+                                                'sectType': sectType.hex()}})
+        
+        if RawBytes2Hex(sectSize) == 0xffffff:
+          #EFI_COMMON_SECTION_HEADER2
+          sectExtSize = f.read(4)
+          fvDict['Fv'+str(fvCnt)].update({'Ffs': {'sectExtSize': sectExtSize[::-1].hex()}})
+
         # Save FVs to file
         try:
           sys.argv[2]
