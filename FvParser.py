@@ -107,13 +107,18 @@ if __name__ == '__main__':
                                                               'DataOffset': dataOffset[::-1].hex(), \
                                                               'Attributes': sgdAttr[::-1].hex()})
 
+            if (RawGuid2Uuid(sectDefGuid) == uuid.UUID('{EE4E5898-3914-4259-9D6E-DC7BD79403CF}')):
+              imgLzma = f.read(int(FvLength[::-1].hex(), 16) - (f.tell() - blkOffset))
+              with open('lzma', 'wb') as fLzma:
+                fLzma.write(imgLzma)
+
         # Save FVs to file
         try:
           sys.argv[2]
         except:
           pass
         else:
-          if sys.argv[2] == '-s':
+          if sys.argv[2] == '-fv':
             f.seek(blkOffset)
             fv = f.read(int(FvLength[::-1].hex(), 16))
             fvName = binName+ '_' + str(hex(blkOffset)) + '.fv'
