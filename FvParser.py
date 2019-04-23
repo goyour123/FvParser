@@ -1,5 +1,5 @@
 import sys, os
-import uuid
+import uuid, lzma
 
 def RawGuid2Uuid(rawGuidBytes):
   return uuid.UUID(bytes=rawGuidBytes[3::-1] + rawGuidBytes[5:3:-1] + \
@@ -10,6 +10,47 @@ def RawBytes2Readable(rawBytes):
 
 def RawBytes2Hex(rawBytes):
   return int(rawBytes[::-1].hex(), 16)
+
+def ParseEfiSect(efiSectBytes, sectDict):
+
+  if len(efiSectBytes) == 0:
+    return sectDict
+
+  sectSize, sectType = efiSectBytes[0:3], efiSectBytes[3:4]
+  end = 4
+  sectLen, hdrLen = RawBytes2Hex(sectSize), len(sectSize) + len(sectType)
+
+  if RawBytes2Hex(sectType) == 0xff:
+    return sectDict
+
+  sectDict.update({RawBytes2Readable(sectType): {'Size': RawBytes2Readable(sectSize), \
+                                                 'Type': RawBytes2Readable(sectType)}})
+
+  if RawBytes2Hex(sectSize) == 0xffffff:
+    #EFI_COMMON_SECTION_HEADER2
+    sectExtSize = efiSectBytes[end:end+4]
+    end += 4
+    sectLen, hdrLen = RawBytes2Hex(sectExtSize), len(sectSize)+len(sectType)+len(sectExtSize)
+    sectDict[RawBytes2Readable(sectType)].update({'ExtendedSize': RawBytes2Readable(sectExtSize)})
+
+  if RawBytes2Hex(sectType) == 0x2:
+    #EFI_SECTION_GUID_DEFINED
+    sectDefGuid, dataOffset, sgdAttr = efiSectBytes[end:end+16], efiSectBytes[end+16:end+16+2], efiSectBytes[end+16+2:end+16+2+2]
+    end += (16 + 2 + 2)
+    if (RawGuid2Uuid(sectDefGuid) == uuid.UUID('{EE4E5898-3914-4259-9D6E-DC7BD79403CF}')):
+      encap = efiSectBytes[end:end + sectLen - RawBytes2Hex(dataOffset)]
+      end += (sectLen - RawBytes2Hex(dataOffset))
+      print('Decapsulating encapsulations...')
+      decap = lzma.decompress(encap)
+      ParseEfiSect(decap, sectDict[RawBytes2Readable(sectType)])
+
+  elif RawBytes2Hex(sectType) == 0x19:
+    end += (sectLen - hdrLen)
+
+  else:
+    end += (sectLen - hdrLen)
+
+  return ParseEfiSect(efiSectBytes[end::], sectDict)
 
 if __name__ == '__main__':
   Signature, sigOffset = b'_FVH', 40
@@ -45,7 +86,7 @@ if __name__ == '__main__':
                                          'Revision': RawBytes2Readable(Revision),
                                          'FvBlockMap': FvBlockMap}})
 
-        print('Fv Offset: ' + hex(blkOffset))
+        print('Found Fv Offset: ' + hex(blkOffset))
 
         # Check extended header
         if (int(ExtHeaderOffset[::-1].hex(), 16) != 0):
@@ -90,27 +131,8 @@ if __name__ == '__main__':
             # EFI_FFS_FILE_HEADER
             pass
 
-          # Parse EFI_COMMON_SECTION_HEADER
-          sectSize, sectType = f.read(3), f.read(1)
-          fvDict['Fv'+str(fvCnt)]['Ffs'].update({'Section': {'SectSize': sectSize[::-1].hex(), \
-                                                             'SectType': sectType.hex()}})
-
-          if RawBytes2Hex(sectSize) == 0xffffff:
-            #EFI_COMMON_SECTION_HEADER2
-            sectExtSize = f.read(4)
-            fvDict['Fv'+str(fvCnt)]['Ffs']['Section'].update({'SectExtSize': sectExtSize[::-1].hex()})
-
-          if RawBytes2Hex(sectType) == 0x2:
-            #EFI_SECTION_GUID_DEFINED
-            sectDefGuid, dataOffset, sgdAttr = f.read(16), f.read(2), f.read(2)
-            fvDict['Fv'+str(fvCnt)]['Ffs']['Section'].update({'SectionDefinitionGuid': str(RawGuid2Uuid(sectDefGuid)), \
-                                                              'DataOffset': dataOffset[::-1].hex(), \
-                                                              'Attributes': sgdAttr[::-1].hex()})
-
-            if (RawGuid2Uuid(sectDefGuid) == uuid.UUID('{EE4E5898-3914-4259-9D6E-DC7BD79403CF}')):
-              imgLzma = f.read(int(FvLength[::-1].hex(), 16) - (f.tell() - blkOffset))
-              with open('lzma', 'wb') as fLzma:
-                fLzma.write(imgLzma)
+          efiSect = f.read(RawBytes2Hex(ffsFileSize))
+          fvDict['Fv'+str(fvCnt)]['Ffs'].update(ParseEfiSect(efiSect, {}))
 
         # Save FVs to file
         try:
