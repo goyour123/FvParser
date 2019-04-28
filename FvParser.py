@@ -44,7 +44,12 @@ def ParseEfiSect(efiSectBytes, sectDict):
       decap = lzma.decompress(encap)
       ParseEfiSect(decap, sectDict[RawBytes2Readable(sectType)])
 
+  elif RawBytes2Hex(sectType) == 0x17:
+    #EFI_SECTION_FIRMWARE_VOLUME_IMAGE
+    end += (sectLen - hdrLen)
+
   elif RawBytes2Hex(sectType) == 0x19:
+    #EFI_SECTION_RAW
     end += (sectLen - hdrLen)
 
   else:
@@ -52,8 +57,87 @@ def ParseEfiSect(efiSectBytes, sectDict):
 
   return ParseEfiSect(efiSectBytes[end::], sectDict)
 
+def ParseFvh(fvhBytes, fvhDict):  
+  if len(fvhBytes) == 0:
+    return fvhDict
+
+  ZeroVector, rawGuid, FvLength, Sig, Attribute, HeaderLength, Checksum, ExtHeaderOffset, Reserved, Revision = \
+    fvhBytes[0:16], fvhBytes[16:32], fvhBytes[32:40], fvhBytes[40:44], fvhBytes[44:48], fvhBytes[48:50], fvhBytes[50:52], fvhBytes[52:54], fvhBytes[54:55], fvhBytes[55:56]
+  
+  end, FvBlockMap= 56, []
+
+  while (len(FvBlockMap) == 0) or ((int(FvBlockMap[-1][0],16), int(FvBlockMap[-1][1],16)) != (0, 0)):
+    NumBlocks, BlockLength = fvhBytes[end:end+4], fvhBytes[end+4:end+8]
+    FvBlockMap.append((NumBlocks[::-1].hex(), BlockLength[::-1].hex()))
+    end += 8
+
+  fvhDict.update({'ZeroVector': ZeroVector, \
+                  'Guid': str(RawGuid2Uuid(rawGuid)), \
+                  'FvLength': RawBytes2Readable(FvLength), \
+                  'Signature': Sig, \
+                  'Attribute': Attribute[::-1].hex(), \
+                  'HeaderLength': RawBytes2Readable(HeaderLength),
+                  'Checksum': RawBytes2Readable(Checksum),
+                  'ExtHeaderOffset': RawBytes2Readable(ExtHeaderOffset),
+                  'Reserved': Reserved,
+                  'Revision': RawBytes2Readable(Revision),
+                  'FvBlockMap': FvBlockMap})
+
+  # Check extended header
+  if (RawBytes2Hex(ExtHeaderOffset) != 0x0):
+    end = RawBytes2Hex(ExtHeaderOffset)
+    FvName, ExtHeaderSize = fvhBytes[end:end+16], fvhBytes[end+16:end+20]
+    end += 20
+    fvhDict.update({'ExtFvName': str(RawGuid2Uuid(FvName)), \
+                    'ExtHeaderSize': RawBytes2Readable(ExtHeaderSize)})
+
+    ExtEntrySize, ExtEntryType = fvhBytes[end:end+2], fvhBytes[end+2:end+4]
+    end += 4
+    if RawBytes2Hex(ExtEntryType) == 0x1:
+      # EFI_FV_EXT_TYPE_OEM_TYPE
+      pass
+    elif RawBytes2Hex(ExtEntryType) == 0x2:
+      # EFI_FV_EXT_TYPE_GUID_TYPE
+      pass
+    elif RawBytes2Hex(ExtEntryType) == 0x3:
+      # EFI_FV_EXT_TYPE_USED_SIZE_TYPE
+      pass
+    elif RawBytes2Hex(ExtEntryType) == 0xffff:
+      fvhDict.update({'ExtEntrySize': RawBytes2Readable(ExtEntrySize), \
+                      'ExtEntryType': RawBytes2Readable(ExtEntryType)})
+    else:
+      pass
+
+  # Check EFI_FFS_FILE_HEADER
+  if (RawGuid2Uuid(rawGuid) == uuid.UUID('{5473C07A-3DCB-4dca-BD6F-1E9689E7349A}')):
+    # EFI_FIRMWARE_FILE_SYSTEM3_GUID
+    ffsName, ffsIntegrityCheck, ffsFileType, ffsFileAttr, ffsFileSize, ffsFileState = \
+      fvhBytes[end:end+16], fvhBytes[end+16:end+18], fvhBytes[end+18:end+19], fvhBytes[end+19:end+20], fvhBytes[end+20:end+23], fvhBytes[end+23:end+24]
+    end += 24
+    fvhDict.update({'Ffs': {'Name': str(RawGuid2Uuid(ffsName)),
+                           'IntegrityCheck': ffsIntegrityCheck[::-1].hex(),
+                           'Type': ffsFileType.hex(),
+                           'Attributes': ffsFileAttr[::-1].hex(),
+                           'Size': ffsFileSize[::-1].hex(),
+                           'State': ffsFileState.hex()}})
+    # Check FFS_ATTRIB_LARGE_FILE
+    if RawBytes2Hex(ffsFileAttr) & 0x01:
+      # EFI_FFS_FILE_HEADER2
+      ffsExtendedSize = fvhBytes[end:end+8]
+      end += 8
+      fvhDict['Fv'+str(fvCnt)]['Ffs'].update({'ExtendedSize': RawBytes2Readable(ffsExtendedSize)})
+    else:
+      # EFI_FFS_FILE_HEADER
+      pass
+
+    efiSect = fvhBytes[end:end+RawBytes2Hex(ffsFileSize)]
+    fvhDict['Ffs'].update(ParseEfiSect(efiSect, {}))
+
+  return fvhDict
+
+
 if __name__ == '__main__':
-  Signature, sigOffset = b'_FVH', 40
+  Signature, sigOffset, lenOffset = b'_FVH', 40, 32
   fSize, blkSize = os.stat(sys.argv[1]).st_size, 0x1000
   fvDict = dict()
   with open(sys.argv[1], 'rb') as f:
@@ -64,75 +148,15 @@ if __name__ == '__main__':
       data = f.read(len(Signature))
       FvBlockMap = []
       if data == Signature:
-        fvCnt += 1
-        f.seek(blkOffset)
-        ZeroVector, rawGuid, FvLength, Sig, Attribute, HeaderLength, Checksum, ExtHeaderOffset, Reserved, Revision = \
-          f.read(16), f.read(16), f.read(8), f.read(4), f.read(4), f.read(2), f.read(2), f.read(2), f.read(1), f.read(1)
-
-        while (len(FvBlockMap) == 0) or ((int(FvBlockMap[-1][0],16), int(FvBlockMap[-1][1],16)) != (0, 0)):
-          NumBlocks, BlockLength = f.read(4), f.read(4)
-          FvBlockMap.append((NumBlocks[::-1].hex(), BlockLength[::-1].hex()))
-
-        # Update FV Header to dict
-        fvDict.update({'Fv'+str(fvCnt): {'ZeroVector': ZeroVector, \
-                                         'Guid': str(RawGuid2Uuid(rawGuid)), \
-                                         'FvLength': RawBytes2Readable(FvLength), \
-                                         'Signature': Sig, \
-                                         'Attribute': Attribute[::-1].hex(), \
-                                         'HeaderLength': RawBytes2Readable(HeaderLength),
-                                         'Checksum': RawBytes2Readable(Checksum),
-                                         'ExtHeaderOffset': RawBytes2Readable(ExtHeaderOffset),
-                                         'Reserved': Reserved,
-                                         'Revision': RawBytes2Readable(Revision),
-                                         'FvBlockMap': FvBlockMap}})
-
         print('Found Fv Offset: ' + hex(blkOffset))
+        fvCnt += 1
+        fvDict.update({'Fv'+str(fvCnt): {}})
 
-        # Check extended header
-        if (int(ExtHeaderOffset[::-1].hex(), 16) != 0):
-          f.seek(blkOffset + int(ExtHeaderOffset[::-1].hex(), 16))
-          FvName, ExtHeaderSize = f.read(16), f.read(4)
-          fvDict['Fv'+str(fvCnt)].update({'ExtFvName': str(RawGuid2Uuid(FvName)), \
-                                          'ExtHeaderSize': RawBytes2Readable(ExtHeaderSize)})
-          
-          ExtEntrySize, ExtEntryType = f.read(2), f.read(2)
-          if RawBytes2Hex(ExtEntryType) == 0x1:
-            # EFI_FV_EXT_TYPE_OEM_TYPE
-            pass
-          elif RawBytes2Hex(ExtEntryType) == 0x2:
-            # EFI_FV_EXT_TYPE_GUID_TYPE
-            pass
-          elif RawBytes2Hex(ExtEntryType) == 0x3:
-            # EFI_FV_EXT_TYPE_USED_SIZE_TYPE
-            pass
-          elif RawBytes2Hex(ExtEntryType) == 0xffff:
-            fvDict['Fv'+str(fvCnt)].update({'ExtEntrySize': RawBytes2Readable(ExtEntrySize), \
-                                            'ExtEntryType': RawBytes2Readable(ExtEntryType)})
-          else:
-            pass
+        f.seek(blkOffset + lenOffset)
+        length = RawBytes2Hex(f.read(8))
 
-        # Check EFI_FFS_FILE_HEADER
-        if (RawGuid2Uuid(rawGuid) == uuid.UUID('{5473C07A-3DCB-4dca-BD6F-1E9689E7349A}')):
-          # EFI_FIRMWARE_FILE_SYSTEM3_GUID
-          ffsName, ffsIntegrityCheck, ffsFileType, ffsFileAttr, ffsFileSize, ffsFileState = \
-            f.read(16), f.read(2), f.read(1), f.read(1), f.read(3), f.read(1)
-          fvDict['Fv'+str(fvCnt)].update({'Ffs': {'Name': str(RawGuid2Uuid(ffsName)),
-                                                  'IntegrityCheck': ffsIntegrityCheck[::-1].hex(),
-                                                  'Type': ffsFileType.hex(),
-                                                  'Attributes': ffsFileAttr[::-1].hex(),
-                                                  'Size': ffsFileSize[::-1].hex(),
-                                                  'State': ffsFileState.hex()}})
-          # Check FFS_ATTRIB_LARGE_FILE
-          if RawBytes2Hex(ffsFileAttr) & 0x01:
-            # EFI_FFS_FILE_HEADER2
-            ffsExtendedSize = f.read(8)
-            fvDict['Fv'+str(fvCnt)]['Ffs'].update({'ExtendedSize': RawBytes2Readable(ffsExtendedSize)})
-          else:
-            # EFI_FFS_FILE_HEADER
-            pass
-
-          efiSect = f.read(RawBytes2Hex(ffsFileSize))
-          fvDict['Fv'+str(fvCnt)]['Ffs'].update(ParseEfiSect(efiSect, {}))
+        f.seek(blkOffset)
+        ParseFvh(f.read(length), fvDict['Fv'+str(fvCnt)])
 
         # Save FVs to file
         try:
