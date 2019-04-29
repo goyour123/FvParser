@@ -46,6 +46,8 @@ def ParseEfiSect(efiSectBytes, sectDict):
 
   elif RawBytes2Hex(sectType) == 0x17:
     #EFI_SECTION_FIRMWARE_VOLUME_IMAGE
+    sectDict[RawBytes2Readable(sectType)].update({'Fv': {}})
+    ParseFvh(efiSectBytes[end:end+(sectLen - hdrLen)], sectDict[RawBytes2Readable(sectType)]['Fv'])
     end += (sectLen - hdrLen)
 
   elif RawBytes2Hex(sectType) == 0x19:
@@ -115,11 +117,11 @@ def ParseFvh(fvhBytes, fvhDict):
       fvhBytes[end:end+16], fvhBytes[end+16:end+18], fvhBytes[end+18:end+19], fvhBytes[end+19:end+20], fvhBytes[end+20:end+23], fvhBytes[end+23:end+24]
     end += 24
     fvhDict.update({'Ffs': {'Name': str(RawGuid2Uuid(ffsName)),
-                           'IntegrityCheck': ffsIntegrityCheck[::-1].hex(),
-                           'Type': ffsFileType.hex(),
-                           'Attributes': ffsFileAttr[::-1].hex(),
-                           'Size': ffsFileSize[::-1].hex(),
-                           'State': ffsFileState.hex()}})
+                            'IntegrityCheck': ffsIntegrityCheck[::-1].hex(),
+                            'Type': ffsFileType.hex(),
+                            'Attributes': ffsFileAttr[::-1].hex(),
+                            'Size': ffsFileSize[::-1].hex(),
+                            'State': ffsFileState.hex()}})
     # Check FFS_ATTRIB_LARGE_FILE
     if RawBytes2Hex(ffsFileAttr) & 0x01:
       # EFI_FFS_FILE_HEADER2
