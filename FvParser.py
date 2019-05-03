@@ -59,6 +59,38 @@ def ParseEfiSect(efiSectBytes, sectDict):
 
   return ParseEfiSect(efiSectBytes[end::], sectDict)
 
+def ParseFfs(ffsBytes, ffsDict):
+  if len(ffsBytes) == 0:
+    return ffsBytes
+
+  end = 0
+  ffsName, ffsIntegrityCheck, ffsFileType, ffsFileAttr, ffsFileSize, ffsFileState = \
+    ffsBytes[end:end+16], ffsBytes[end+16:end+18], ffsBytes[end+18:end+19], ffsBytes[end+19:end+20], ffsBytes[end+20:end+23], ffsBytes[end+23:end+24]
+  end += 24
+
+  ffsDict.update({'Name': str(RawGuid2Uuid(ffsName)),
+                  'IntegrityCheck': ffsIntegrityCheck[::-1].hex(),
+                  'Type': ffsFileType.hex(),
+                  'Attributes': ffsFileAttr[::-1].hex(),
+                  'Size': ffsFileSize[::-1].hex(),
+                  'State': ffsFileState.hex()})
+
+  # Check FFS_ATTRIB_LARGE_FILE
+  if RawBytes2Hex(ffsFileAttr) & 0x01:
+    # EFI_FFS_FILE_HEADER2
+    ffsExtendedSize = ffsBytes[end:end+8]
+    end += 8
+    ffsDict.update({'ExtendedSize': RawBytes2Readable(ffsExtendedSize)})
+  else:
+    # EFI_FFS_FILE_HEADER
+    pass
+
+  efiSect = ffsBytes[end:end+RawBytes2Hex(ffsFileSize)]
+  ffsDict.update(ParseEfiSect(efiSect, {}))
+
+  return ffsDict
+
+
 def ParseFvh(fvhBytes, fvhDict):  
   if len(fvhBytes) == 0:
     return fvhDict
@@ -111,30 +143,10 @@ def ParseFvh(fvhBytes, fvhDict):
       pass
 
   # Check EFI_FFS_FILE_HEADER
-  if (RawGuid2Uuid(rawGuid) == uuid.UUID('{5473C07A-3DCB-4dca-BD6F-1E9689E7349A}')):
-    # EFI_FIRMWARE_FILE_SYSTEM3_GUID
-    ffsName, ffsIntegrityCheck, ffsFileType, ffsFileAttr, ffsFileSize, ffsFileState = \
-      fvhBytes[end:end+16], fvhBytes[end+16:end+18], fvhBytes[end+18:end+19], fvhBytes[end+19:end+20], fvhBytes[end+20:end+23], fvhBytes[end+23:end+24]
-    end += 24
-    fvhDict.update({'Ffs': {'Name': str(RawGuid2Uuid(ffsName)),
-                            'IntegrityCheck': ffsIntegrityCheck[::-1].hex(),
-                            'Type': ffsFileType.hex(),
-                            'Attributes': ffsFileAttr[::-1].hex(),
-                            'Size': ffsFileSize[::-1].hex(),
-                            'State': ffsFileState.hex()}})
-    # Check FFS_ATTRIB_LARGE_FILE
-    if RawBytes2Hex(ffsFileAttr) & 0x01:
-      # EFI_FFS_FILE_HEADER2
-      ffsExtendedSize = fvhBytes[end:end+8]
-      end += 8
-      fvhDict['Fv'+str(fvCnt)]['Ffs'].update({'ExtendedSize': RawBytes2Readable(ffsExtendedSize)})
-    else:
-      # EFI_FFS_FILE_HEADER
-      pass
-
-    efiSect = fvhBytes[end:end+RawBytes2Hex(ffsFileSize)]
-    fvhDict['Ffs'].update(ParseEfiSect(efiSect, {}))
-
+  if RawGuid2Uuid(rawGuid) == uuid.UUID('{5473C07A-3DCB-4dca-BD6F-1E9689E7349A}') or RawGuid2Uuid(rawGuid) == uuid.UUID('{8C8CE578-8A3D-4f1c-9935-896185C32DD3}'):
+    # EFI_FIRMWARE_FILE_SYSTEM3_GUID or EFI_FIRMWARE_FILE_SYSTEM2_GUID
+    fvhDict.update({'Ffs': ParseFfs(fvhBytes[end:], {})})
+ 
   return fvhDict
 
 
