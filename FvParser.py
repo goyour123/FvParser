@@ -1,5 +1,7 @@
 import sys, os
 import uuid, lzma
+import json
+from UefiPi import getScetTypeName
 
 def RawGuid2Uuid(rawGuidBytes):
   return uuid.UUID(bytes=rawGuidBytes[3::-1] + rawGuidBytes[5:3:-1] + \
@@ -12,62 +14,79 @@ def RawBytes2Hex(rawBytes):
   return int(rawBytes[::-1].hex(), 16)
 
 def ParseEfiSect(efiSectBytes, sectDict):
+  end = 0
+  sectCntDict = {}
+  sectTypeTuple = (0x0, 0x1, 0x2, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1B, 0x1C)
+  while end < len(efiSectBytes):
+    sectSize, sectType = efiSectBytes[end:end+3], efiSectBytes[end+3:end+4]
 
-  if len(efiSectBytes) == 0:
-    return sectDict
-
-  sectSize, sectType = efiSectBytes[0:3], efiSectBytes[3:4]
-  end = 4
-  sectLen, hdrLen = RawBytes2Hex(sectSize), len(sectSize) + len(sectType)
-
-  if RawBytes2Hex(sectType) == 0xff:
-    return sectDict
-
-  sectDict.update({RawBytes2Readable(sectType): {'Size': RawBytes2Readable(sectSize), \
-                                                 'Type': RawBytes2Readable(sectType)}})
-
-  if RawBytes2Hex(sectSize) == 0xffffff:
-    #EFI_COMMON_SECTION_HEADER2
-    sectExtSize = efiSectBytes[end:end+4]
     end += 4
-    sectLen, hdrLen = RawBytes2Hex(sectExtSize), len(sectSize)+len(sectType)+len(sectExtSize)
-    sectDict[RawBytes2Readable(sectType)].update({'ExtendedSize': RawBytes2Readable(sectExtSize)})
+    sectLen, hdrLen = RawBytes2Hex(sectSize), len(sectSize) + len(sectType)
 
-  if RawBytes2Hex(sectType) == 0x2:
-    #EFI_SECTION_GUID_DEFINED
-    sectDefGuid, dataOffset, sgdAttr = efiSectBytes[end:end+16], efiSectBytes[end+16:end+16+2], efiSectBytes[end+16+2:end+16+2+2]
-    end += (16 + 2 + 2)
-    if (RawGuid2Uuid(sectDefGuid) == uuid.UUID('{EE4E5898-3914-4259-9D6E-DC7BD79403CF}')):
-      encap = efiSectBytes[end:end + sectLen - RawBytes2Hex(dataOffset)]
-      end += (sectLen - RawBytes2Hex(dataOffset))
-      print('Decapsulating encapsulations...')
-      decap = lzma.decompress(encap)
-      ParseEfiSect(decap, sectDict[RawBytes2Readable(sectType)])
+    if RawBytes2Hex(sectType) not in sectTypeTuple:
+      break
 
-  elif RawBytes2Hex(sectType) == 0x17:
-    #EFI_SECTION_FIRMWARE_VOLUME_IMAGE
-    sectDict[RawBytes2Readable(sectType)].update({'Fv': {}})
-    ParseFvh(efiSectBytes[end:end+(sectLen - hdrLen)], sectDict[RawBytes2Readable(sectType)]['Fv'])
-    end += (sectLen - hdrLen)
+    sectName = getScetTypeName(RawBytes2Hex(sectType))
+    if sectName not in sectCntDict:
+      sectCntDict.update({sectName: 1})
+    else:
+      sectCntDict[sectName] += 1
+      sectName = sectName + '_' + str(sectCntDict[sectName])
 
-  elif RawBytes2Hex(sectType) == 0x19:
-    #EFI_SECTION_RAW
-    end += (sectLen - hdrLen)
+    sectDict.update({sectName: {'Size': RawBytes2Readable(sectSize), \
+                                'Type': RawBytes2Readable(sectType)}})
 
-  else:
-    end += (sectLen - hdrLen)
+    if RawBytes2Hex(sectSize) == 0xffffff:
+      #EFI_COMMON_SECTION_HEADER2
+      sectExtSize = efiSectBytes[end:end+4]
+      end += 4
+      sectLen, hdrLen = RawBytes2Hex(sectExtSize), len(sectSize)+len(sectType)+len(sectExtSize)
+      sectDict[sectName].update({'ExtendedSize': RawBytes2Readable(sectExtSize)})
 
-  return ParseEfiSect(efiSectBytes[end::], sectDict)
+    if RawBytes2Hex(sectType) == 0x2:
+      # EFI_SECTION_GUID_DEFINED
+      print('found EFI_SECTION_GUID_DEFINED')
+      sectDefGuid, dataOffset, sgdAttr = efiSectBytes[end:end+16], efiSectBytes[end+16:end+16+2], efiSectBytes[end+16+2:end+16+2+2]
+      end += (16 + 2 + 2)
+      if (RawGuid2Uuid(sectDefGuid) == uuid.UUID('{EE4E5898-3914-4259-9D6E-DC7BD79403CF}')):
+        encap = efiSectBytes[end:end + sectLen - RawBytes2Hex(dataOffset)]
+        end += (sectLen - RawBytes2Hex(dataOffset))
+        print('Decapsulating encapsulations...')
+        decap = lzma.decompress(encap)
+        ParseEfiSect(decap, sectDict[sectName])
+
+    elif RawBytes2Hex(sectType) == 0x17:
+      #EFI_SECTION_FIRMWARE_VOLUME_IMAGE
+      sectDict[sectName].update({'Fv': {}})
+      ParseFvh(efiSectBytes[end:end+(sectLen - hdrLen)], sectDict[sectName]['Fv'])
+      end += (sectLen - hdrLen)
+
+    elif RawBytes2Hex(sectType) in sectTypeTuple:
+      end += (sectLen - hdrLen)
+    else:
+      break
+    
+    for b in efiSectBytes[end:]:
+      if b == 0x0:
+        end += 1
+      else:
+        break
+
+  return sectDict
 
 def ParseFfs(ffsBytes, ffsDict):
-  if len(ffsBytes) == 0:
-    return ffsBytes
-
-  end = 0
+  end, hdrLen = 0, 0
   ffsName, ffsIntegrityCheck, ffsFileType, ffsFileAttr, ffsFileSize, ffsFileState = \
     ffsBytes[end:end+16], ffsBytes[end+16:end+18], ffsBytes[end+18:end+19], ffsBytes[end+19:end+20], ffsBytes[end+20:end+23], ffsBytes[end+23:end+24]
-  end += 24
 
+  if not RawBytes2Hex(ffsFileAttr) & 0x40:
+    # Check FFS_ATTRIB_CHECKSUM
+    if not RawBytes2Hex(ffsIntegrityCheck[1:2]) == 0xaa:
+      # Check EFI_FFS_INTEGRITY_CHECK
+      return ffsDict
+
+  end += 24
+  hdrLen = 24
   ffsDict.update({'Name': str(RawGuid2Uuid(ffsName)),
                   'IntegrityCheck': ffsIntegrityCheck[::-1].hex(),
                   'Type': ffsFileType.hex(),
@@ -80,40 +99,42 @@ def ParseFfs(ffsBytes, ffsDict):
     # EFI_FFS_FILE_HEADER2
     ffsExtendedSize = ffsBytes[end:end+8]
     end += 8
+    hdrLen += 8
     ffsDict.update({'ExtendedSize': RawBytes2Readable(ffsExtendedSize)})
   else:
     # EFI_FFS_FILE_HEADER
     pass
 
-  efiSect = ffsBytes[end:end+RawBytes2Hex(ffsFileSize)]
+  efiSect = ffsBytes[end:end+RawBytes2Hex(ffsFileSize)-hdrLen]
   ffsDict.update(ParseEfiSect(efiSect, {}))
+  end += (RawBytes2Hex(ffsFileSize) - hdrLen)
 
   return ffsDict
 
 
-def ParseFvh(fvhBytes, fvhDict):  
+def ParseFvh(fvhBytes, fvhDict):
   if len(fvhBytes) == 0:
     return fvhDict
 
   ZeroVector, rawGuid, FvLength, Sig, Attribute, HeaderLength, Checksum, ExtHeaderOffset, Reserved, Revision = \
     fvhBytes[0:16], fvhBytes[16:32], fvhBytes[32:40], fvhBytes[40:44], fvhBytes[44:48], fvhBytes[48:50], fvhBytes[50:52], fvhBytes[52:54], fvhBytes[54:55], fvhBytes[55:56]
-  
-  end, FvBlockMap= 56, []
+
+  end, FvBlockMap = 56, []
 
   while (len(FvBlockMap) == 0) or ((int(FvBlockMap[-1][0],16), int(FvBlockMap[-1][1],16)) != (0, 0)):
     NumBlocks, BlockLength = fvhBytes[end:end+4], fvhBytes[end+4:end+8]
     FvBlockMap.append((NumBlocks[::-1].hex(), BlockLength[::-1].hex()))
     end += 8
 
-  fvhDict.update({'ZeroVector': ZeroVector, \
+  fvhDict.update({'ZeroVector': ZeroVector[::-1].hex(), \
                   'Guid': str(RawGuid2Uuid(rawGuid)), \
                   'FvLength': RawBytes2Readable(FvLength), \
-                  'Signature': Sig, \
+                  'Signature': str(Sig, 'utf-8'), \
                   'Attribute': Attribute[::-1].hex(), \
                   'HeaderLength': RawBytes2Readable(HeaderLength),
                   'Checksum': RawBytes2Readable(Checksum),
                   'ExtHeaderOffset': RawBytes2Readable(ExtHeaderOffset),
-                  'Reserved': Reserved,
+                  'Reserved': RawBytes2Readable(Reserved),
                   'Revision': RawBytes2Readable(Revision),
                   'FvBlockMap': FvBlockMap})
 
@@ -145,10 +166,29 @@ def ParseFvh(fvhBytes, fvhDict):
   # Check EFI_FFS_FILE_HEADER
   if RawGuid2Uuid(rawGuid) == uuid.UUID('{5473C07A-3DCB-4dca-BD6F-1E9689E7349A}') or RawGuid2Uuid(rawGuid) == uuid.UUID('{8C8CE578-8A3D-4f1c-9935-896185C32DD3}'):
     # EFI_FIRMWARE_FILE_SYSTEM3_GUID or EFI_FIRMWARE_FILE_SYSTEM2_GUID
-    fvhDict.update({'Ffs': ParseFfs(fvhBytes[end:], {})})
- 
-  return fvhDict
+    ffsCnt, ffsDict = 0, {}
+    while len(fvhBytes[end:]) != 0:
+      ffsDict = ParseFfs(fvhBytes[end:], {})
+      if not ffsDict:
+        break
 
+      fvhDict.update({'Ffs'+str(ffsCnt): ffsDict})
+
+      # Check FFS_ATTRIB_LARGE_FILE
+      if not int(fvhDict['Ffs'+str(ffsCnt)]['Attributes'], 16) & 0x01:
+        end += int(fvhDict['Ffs'+str(ffsCnt)]['Size'], 16)
+      else:
+        end += int(fvhDict['Ffs'+str(ffsCnt)]['ExtendedSize'], 16)
+
+      for b in fvhBytes[end:]:
+        if b == 0xff:
+          end += 1
+        else:
+          break
+
+      ffsCnt += 1
+
+  return fvhDict
 
 if __name__ == '__main__':
   Signature, sigOffset, lenOffset = b'_FVH', 40, 32
@@ -184,5 +224,6 @@ if __name__ == '__main__':
             fvName = binName+ '_' + str(hex(blkOffset)) + '.fv'
             with open(fvName, 'wb') as fvFile:
               fvFile.write(fv)
-  for i in fvDict:
-    print(fvDict[i])
+  
+  with open ('Fv.json', 'w') as j:
+    j.write(json.dumps(fvDict, indent = 4))
