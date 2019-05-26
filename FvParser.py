@@ -179,8 +179,15 @@ def ParseFvh(fvhBytes, fvhDict):
       else:
         end += int(fvhDict['Ffs'+str(ffsCnt)]['ExtendedSize'], 16)
 
-      for b in fvhBytes[end:]:
+      remainLen = len(fvhBytes[end:])
+      remainFvh = fvhBytes[end:]
+      for idx, b in enumerate(remainFvh):
         if b == 0xff:
+          if not remainLen - idx < 0x18:
+            if fvhBytes[end+18:end+19] == b'\xf0':
+              if fvhBytes[end:end+16] == b'\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff':
+                # Check whether next FFS is EFI_FV_FILETYPE_FFS_PAD or not
+                break
           end += 1
         else:
           break
