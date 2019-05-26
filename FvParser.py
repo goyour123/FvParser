@@ -1,7 +1,7 @@
 import sys, os
 import uuid, lzma
 import json
-from UefiPi import getScetTypeName
+from UefiPi import allSectTypes, getSectTypeName
 
 def RawGuid2Uuid(rawGuidBytes):
   return uuid.UUID(bytes=rawGuidBytes[3::-1] + rawGuidBytes[5:3:-1] + \
@@ -16,17 +16,16 @@ def RawBytes2Hex(rawBytes):
 def ParseEfiSect(efiSectBytes, sectDict):
   end = 0
   sectCntDict = {}
-  sectTypeTuple = (0x0, 0x1, 0x2, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1B, 0x1C)
   while end < len(efiSectBytes):
     sectSize, sectType = efiSectBytes[end:end+3], efiSectBytes[end+3:end+4]
 
     end += 4
     sectLen, hdrLen = RawBytes2Hex(sectSize), len(sectSize) + len(sectType)
 
-    if RawBytes2Hex(sectType) not in sectTypeTuple:
+    if RawBytes2Hex(sectType) not in allSectTypes():
       break
 
-    sectName = getScetTypeName(RawBytes2Hex(sectType))
+    sectName = getSectTypeName(RawBytes2Hex(sectType))
     if sectName not in sectCntDict:
       sectCntDict.update({sectName: 1})
     else:
@@ -61,7 +60,7 @@ def ParseEfiSect(efiSectBytes, sectDict):
       ParseFvh(efiSectBytes[end:end+(sectLen - hdrLen)], sectDict[sectName]['Fv'])
       end += (sectLen - hdrLen)
 
-    elif RawBytes2Hex(sectType) in sectTypeTuple:
+    elif RawBytes2Hex(sectType) in allSectTypes():
       end += (sectLen - hdrLen)
     else:
       break

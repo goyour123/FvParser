@@ -17,7 +17,10 @@ EFI_SECTION_TYPE = {
     'EFI_SECTION_MM_DEPEX': 0x1C,
 }
 
-def getScetTypeName(sectType):
+def allSectTypes():
+    return EFI_SECTION_TYPE.values()
+
+def getSectTypeName(sectType):
     if sectType not in EFI_SECTION_TYPE.values():
         return None
     for k, v in EFI_SECTION_TYPE.items():
