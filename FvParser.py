@@ -18,14 +18,15 @@ def ParseEfiSect(efiSectBytes, sectDict):
   sectCntDict = {}
   while end < len(efiSectBytes):
     sectSize, sectType = efiSectBytes[end:end+3], efiSectBytes[end+3:end+4]
+    sectTypeNum = RawBytes2Hex(sectType)
 
     end += 4
     sectLen, hdrLen = RawBytes2Hex(sectSize), len(sectSize) + len(sectType)
 
-    if RawBytes2Hex(sectType) not in allSectTypes():
+    if sectTypeNum not in allSectTypes():
       break
 
-    sectName = getSectTypeName(RawBytes2Hex(sectType))
+    sectName = getSectTypeName(sectTypeNum)
     if sectName not in sectCntDict:
       sectCntDict.update({sectName: 1})
     else:
@@ -35,14 +36,14 @@ def ParseEfiSect(efiSectBytes, sectDict):
     sectDict.update({sectName: {'Size': RawBytes2Readable(sectSize), \
                                 'Type': RawBytes2Readable(sectType)}})
 
-    if RawBytes2Hex(sectSize) == 0xffffff:
+    if sectLen == 0xffffff:
       #EFI_COMMON_SECTION_HEADER2
       sectExtSize = efiSectBytes[end:end+4]
       end += 4
       sectLen, hdrLen = RawBytes2Hex(sectExtSize), len(sectSize)+len(sectType)+len(sectExtSize)
       sectDict[sectName].update({'ExtendedSize': RawBytes2Readable(sectExtSize)})
 
-    if RawBytes2Hex(sectType) == 0x2:
+    if sectTypeNum == 0x2:
       # EFI_SECTION_GUID_DEFINED
       print('found EFI_SECTION_GUID_DEFINED')
       sectDefGuid, dataOffset, sgdAttr = efiSectBytes[end:end+16], efiSectBytes[end+16:end+16+2], efiSectBytes[end+16+2:end+16+2+2]
@@ -54,13 +55,13 @@ def ParseEfiSect(efiSectBytes, sectDict):
         decap = lzma.decompress(encap)
         ParseEfiSect(decap, sectDict[sectName])
 
-    elif RawBytes2Hex(sectType) == 0x17:
+    elif sectTypeNum == 0x17:
       #EFI_SECTION_FIRMWARE_VOLUME_IMAGE
       sectDict[sectName].update({'Fv': {}})
       ParseFvh(efiSectBytes[end:end+(sectLen - hdrLen)], sectDict[sectName]['Fv'])
       end += (sectLen - hdrLen)
 
-    elif RawBytes2Hex(sectType) in allSectTypes():
+    elif sectTypeNum in allSectTypes():
       end += (sectLen - hdrLen)
     else:
       break
@@ -78,7 +79,10 @@ def ParseFfs(ffsBytes, ffsDict):
   ffsName, ffsIntegrityCheck, ffsFileType, ffsFileAttr, ffsFileSize, ffsFileState = \
     ffsBytes[end:end+16], ffsBytes[end+16:end+18], ffsBytes[end+18:end+19], ffsBytes[end+19:end+20], ffsBytes[end+20:end+23], ffsBytes[end+23:end+24]
 
-  if not RawBytes2Hex(ffsFileAttr) & 0x40:
+  ffsFileAttr = RawBytes2Hex(ffsFileAttr)
+  ffsFileSize = RawBytes2Hex(ffsFileSize)
+
+  if not ffsFileAttr & 0x40:
     # Check FFS_ATTRIB_CHECKSUM
     if not RawBytes2Hex(ffsIntegrityCheck[1:2]) == 0xaa:
       # Check EFI_FFS_INTEGRITY_CHECK
@@ -89,12 +93,12 @@ def ParseFfs(ffsBytes, ffsDict):
   ffsDict.update({'Name': str(RawGuid2Uuid(ffsName)),
                   'IntegrityCheck': ffsIntegrityCheck[::-1].hex(),
                   'Type': ffsFileType.hex(),
-                  'Attributes': ffsFileAttr[::-1].hex(),
-                  'Size': ffsFileSize[::-1].hex(),
+                  'Attributes': hex(ffsFileAttr)[2:].zfill(2),
+                  'Size': hex(ffsFileSize)[2:].zfill(6),
                   'State': ffsFileState.hex()})
 
   # Check FFS_ATTRIB_LARGE_FILE
-  if RawBytes2Hex(ffsFileAttr) & 0x01:
+  if ffsFileAttr & 0x01:
     # EFI_FFS_FILE_HEADER2
     ffsExtendedSize = ffsBytes[end:end+8]
     end += 8
@@ -104,9 +108,9 @@ def ParseFfs(ffsBytes, ffsDict):
     # EFI_FFS_FILE_HEADER
     pass
 
-  efiSect = ffsBytes[end:end+RawBytes2Hex(ffsFileSize)-hdrLen]
+  efiSect = ffsBytes[end:end+ffsFileSize-hdrLen]
   ffsDict.update(ParseEfiSect(efiSect, {}))
-  end += (RawBytes2Hex(ffsFileSize) - hdrLen)
+  end += (ffsFileSize - hdrLen)
 
   return ffsDict
 
