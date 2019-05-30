@@ -1,7 +1,7 @@
 import sys, os
 import uuid, lzma
 import json
-from UefiPi import allSectTypes, getSectTypeName
+from Spec import allSectTypes, getSectTypeName
 
 def RawGuid2Uuid(rawGuidBytes):
   return uuid.UUID(bytes=rawGuidBytes[3::-1] + rawGuidBytes[5:3:-1] + \
