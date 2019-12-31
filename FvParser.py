@@ -1,6 +1,7 @@
 import sys, os
 import uuid, lzma
 import json
+import logging
 from Spec import allSectTypes, getSectTypeName
 
 def RawGuid2Uuid(rawGuidBytes):
@@ -201,6 +202,7 @@ def ParseFvh(fvhBytes, fvhDict):
   return fvhDict
 
 if __name__ == '__main__':
+  logging.basicConfig(level=logging.DEBUG)
   Signature, sigOffset, lenOffset = b'_FVH', 40, 32
   fSize, blkSize = os.stat(sys.argv[1]).st_size, 0x1000
   fvDict = dict()
@@ -212,15 +214,16 @@ if __name__ == '__main__':
       data = f.read(len(Signature))
       FvBlockMap = []
       if data == Signature:
-        print('Found Fv Offset: ' + hex(blkOffset))
         fvCnt += 1
-        fvDict.update({'Fv'+str(fvCnt): {}})
+        logging.info('Found Fv ' + str(fvCnt) + ' Offset: ' + hex(blkOffset))
+        fvDict.update({'Fv' + str(fvCnt): {}})
 
         f.seek(blkOffset + lenOffset)
-        length = RawBytes2Hex(f.read(8))
+        fvLength = RawBytes2Hex(f.read(8))
+        logging.info('      Fv ' + str(fvCnt) + ' Length: ' + hex(fvLength))
 
         f.seek(blkOffset)
-        ParseFvh(f.read(length), fvDict['Fv'+str(fvCnt)])
+        ParseFvh(f.read(fvLength), fvDict['Fv' + str(fvCnt)])
 
         # Save FVs to file
         try:
@@ -230,7 +233,7 @@ if __name__ == '__main__':
         else:
           if sys.argv[2] == '-fv':
             f.seek(blkOffset)
-            fv = f.read(int(FvLength[::-1].hex(), 16))
+            fv = f.read(fvLength)
             fvName = binName+ '_' + str(hex(blkOffset)) + '.fv'
             with open(fvName, 'wb') as fvFile:
               fvFile.write(fv)
