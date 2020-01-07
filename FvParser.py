@@ -46,13 +46,13 @@ def ParseEfiSect(efiSectBytes, sectDict):
 
     if sectTypeNum == 0x2:
       # EFI_SECTION_GUID_DEFINED
-      print('found EFI_SECTION_GUID_DEFINED')
+      logging.info('      found EFI_SECTION_GUID_DEFINED')
       sectDefGuid, dataOffset, sgdAttr = efiSectBytes[end:end+16], efiSectBytes[end+16:end+16+2], efiSectBytes[end+16+2:end+16+2+2]
       end += (16 + 2 + 2)
       if (RawGuid2Uuid(sectDefGuid) == uuid.UUID('{EE4E5898-3914-4259-9D6E-DC7BD79403CF}')):
         encap = efiSectBytes[end:end + sectLen - RawBytes2Hex(dataOffset)]
         end += (sectLen - RawBytes2Hex(dataOffset))
-        print('Decapsulating encapsulations...')
+        logging.info('      Decapsulating encapsulations...')
         decap = lzma.decompress(encap)
         ParseEfiSect(decap, sectDict[sectName])
 

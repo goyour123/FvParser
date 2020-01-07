@@ -1,3 +1,4 @@
+from ctypes import *
 
 EFI_SECTION_TYPE = {
     'EFI_SECTION_COMPRESSION': 0x01,
@@ -16,6 +17,12 @@ EFI_SECTION_TYPE = {
     'EFI_SECTION_PEI_DEPEX': 0x1B,
     'EFI_SECTION_MM_DEPEX': 0x1C,
 }
+
+class EFI_GUID(Structure):
+    _field_ = [('Data1', c_uint32),
+               ('Data2', c_uint16),
+               ('Data3', c_uint16),
+               ('Data4', c_uint8 * 8)]
 
 def allSectTypes():
     return EFI_SECTION_TYPE.values()
