@@ -207,7 +207,7 @@ if __name__ == '__main__':
   fSize, blkSize = os.stat(sys.argv[1]).st_size, 0x1000
   fvDict = dict()
   with open(sys.argv[1], 'rb') as f:
-    fvCnt = 0
+    fvCnt, sFfs = 0, None
     binName = os.path.splitext(os.path.basename(sys.argv[1]))[0]
     for blkOffset in range(0, fSize, blkSize):
       f.seek(blkOffset + sigOffset)
@@ -222,17 +222,19 @@ if __name__ == '__main__':
         fvLength = RawBytes2Hex(f.read(8))
         logging.info('      Fv ' + str(fvCnt) + ' Length: ' + hex(fvLength))
 
-        f.seek(blkOffset)
-        ParseFvh(f.read(fvLength), fvDict['Fv' + str(fvCnt)])
-
-        # Save FVs to file
         if len(sys.argv) > 2:
           if '-fv' in sys.argv:
+            # Save FVs to file
             f.seek(blkOffset)
             fv = f.read(fvLength)
             fvName = binName+ '_' + str(hex(blkOffset)) + '.fv'
             with open(fvName, 'wb') as fvFile:
               fvFile.write(fv)
-  
+          if '-ffs' in sys.argv:
+            sFfs = sys.argv[sys.argv.index('-ffs') + 1]
+
+        f.seek(blkOffset)
+        ParseFvh(f.read(fvLength), fvDict['Fv' + str(fvCnt)], specifiedFfs=sFfs)
+
   with open ('Fv.json', 'w') as j:
     j.write(json.dumps(fvDict, indent = 4))
