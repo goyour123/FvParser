@@ -57,7 +57,7 @@ def ParseEfiSect(efiSectBytes, sectDict):
         ParseEfiSect(decap, sectDict[sectName])
 
     elif sectTypeNum == 0x17:
-      #EFI_SECTION_FIRMWARE_VOLUME_IMAGE
+      # EFI_SECTION_FIRMWARE_VOLUME_IMAGE
       sectDict[sectName].update({'Fv': {}})
       ParseFvh(efiSectBytes[end:end+(sectLen - hdrLen)], sectDict[sectName]['Fv'])
       end += (sectLen - hdrLen)
@@ -66,7 +66,7 @@ def ParseEfiSect(efiSectBytes, sectDict):
       end += (sectLen - hdrLen)
     else:
       break
-    
+
     for b in efiSectBytes[end:]:
       if b == 0x0:
         end += 1
@@ -116,7 +116,7 @@ def ParseFfs(ffsBytes, ffsDict):
   return ffsDict
 
 
-def ParseFvh(fvhBytes, fvhDict):
+def ParseFvh(fvhBytes, fvhDict, **kwargs):
   if len(fvhBytes) == 0:
     return fvhDict
 
@@ -226,12 +226,8 @@ if __name__ == '__main__':
         ParseFvh(f.read(fvLength), fvDict['Fv' + str(fvCnt)])
 
         # Save FVs to file
-        try:
-          sys.argv[2]
-        except:
-          pass
-        else:
-          if sys.argv[2] == '-fv':
+        if len(sys.argv) > 2:
+          if '-fv' in sys.argv:
             f.seek(blkOffset)
             fv = f.read(fvLength)
             fvName = binName+ '_' + str(hex(blkOffset)) + '.fv'
