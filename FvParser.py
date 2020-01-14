@@ -14,9 +14,13 @@ def RawBytes2Readable(rawBytes):
 def RawBytes2Hex(rawBytes):
   return int(rawBytes[::-1].hex(), 16)
 
-def ParseEfiSect(efiSectBytes, sectDict):
-  end = 0
+def ParseEfiSect(efiSectBytes, sectDict, **kwargs):
+  end, sFfs = 0, {}
   sectCntDict = {}
+
+  if 'specifiedFfs' in kwargs:
+    sFfs = kwargs['specifiedFfs']
+
   while end < len(efiSectBytes):
     sectSize, sectType = efiSectBytes[end:end+3], efiSectBytes[end+3:end+4]
     sectTypeNum = RawBytes2Hex(sectType)
@@ -54,12 +58,12 @@ def ParseEfiSect(efiSectBytes, sectDict):
         end += (sectLen - RawBytes2Hex(dataOffset))
         logging.info('      Decapsulating encapsulations...')
         decap = lzma.decompress(encap)
-        ParseEfiSect(decap, sectDict[sectName])
+        ParseEfiSect(decap, sectDict[sectName], specifiedFfs=sFfs)
 
     elif sectTypeNum == 0x17:
       # EFI_SECTION_FIRMWARE_VOLUME_IMAGE
       sectDict[sectName].update({'Fv': {}})
-      ParseFvh(efiSectBytes[end:end+(sectLen - hdrLen)], sectDict[sectName]['Fv'])
+      ParseFvh(efiSectBytes[end:end+(sectLen - hdrLen)], sectDict[sectName]['Fv'], specifiedFfs=sFfs)
       end += (sectLen - hdrLen)
 
     elif sectTypeNum in allSectTypes():
@@ -75,8 +79,12 @@ def ParseEfiSect(efiSectBytes, sectDict):
 
   return sectDict
 
-def ParseFfs(ffsBytes, ffsDict):
-  end, hdrLen = 0, 0
+def ParseFfs(ffsBytes, ffsDict, **kwargs):
+  end, hdrLen, sFfs = 0, 0, {}
+
+  if 'specifiedFfs' in kwargs:
+    sFfs = kwargs['specifiedFfs']
+
   ffsName, ffsIntegrityCheck, ffsFileType, ffsFileAttr, ffsFileSize, ffsFileState = \
     ffsBytes[end:end+16], ffsBytes[end+16:end+18], ffsBytes[end+18:end+19], ffsBytes[end+19:end+20], ffsBytes[end+20:end+23], ffsBytes[end+23:end+24]
 
@@ -110,7 +118,7 @@ def ParseFfs(ffsBytes, ffsDict):
     pass
 
   efiSect = ffsBytes[end:end+ffsFileSize-hdrLen]
-  ffsDict.update(ParseEfiSect(efiSect, {}))
+  ffsDict.update(ParseEfiSect(efiSect, {}, specifiedFfs=sFfs))
   end += (ffsFileSize - hdrLen)
 
   return ffsDict
@@ -123,7 +131,10 @@ def ParseFvh(fvhBytes, fvhDict, **kwargs):
   ZeroVector, rawGuid, FvLength, Sig, Attribute, HeaderLength, Checksum, ExtHeaderOffset, Reserved, Revision = \
     fvhBytes[0:16], fvhBytes[16:32], fvhBytes[32:40], fvhBytes[40:44], fvhBytes[44:48], fvhBytes[48:50], fvhBytes[50:52], fvhBytes[52:54], fvhBytes[54:55], fvhBytes[55:56]
 
-  end, FvBlockMap = 56, []
+  end, FvBlockMap, sFfs = 56, [], {}
+
+  if 'specifiedFfs' in kwargs:
+    sFfs = kwargs['specifiedFfs']
 
   while (len(FvBlockMap) == 0) or ((int(FvBlockMap[-1][0],16), int(FvBlockMap[-1][1],16)) != (0, 0)):
     NumBlocks, BlockLength = fvhBytes[end:end+4], fvhBytes[end+4:end+8]
@@ -172,9 +183,18 @@ def ParseFvh(fvhBytes, fvhDict, **kwargs):
     # EFI_FIRMWARE_FILE_SYSTEM3_GUID or EFI_FIRMWARE_FILE_SYSTEM2_GUID
     ffsCnt, ffsDict = 0, {}
     while len(fvhBytes[end:]) != 0:
-      ffsDict = ParseFfs(fvhBytes[end:], {})
+      ffsDict = ParseFfs(fvhBytes[end:], {}, specifiedFfs=sFfs)
       if not ffsDict:
         break
+
+      if sFfs:
+        if uuid.UUID(ffsDict['Name']) == uuid.UUID(sFfs['Name']):
+          sFfs['Offset'] = hex(end)
+          sFfs['Size'] = ffsDict['Size']
+          logging.info('Specified FFS Name:   ' + sFfs['Name'])
+          logging.info('              Offset: ' + sFfs['Offset'])
+          logging.info('              Size:   ' + sFfs['Size'])
+          return sFfs
 
       fvhDict.update({'Ffs'+str(ffsCnt): ffsDict})
 
@@ -208,7 +228,7 @@ if __name__ == '__main__':
   fvDict = dict()
   outputFvJson = True
   with open(sys.argv[1], 'rb') as f:
-    fvCnt, sFfs = 0, None
+    fvCnt, sFfs = 0, {}
     binName = os.path.splitext(os.path.basename(sys.argv[1]))[0]
     for blkOffset in range(0, fSize, blkSize):
       f.seek(blkOffset + sigOffset)
@@ -233,10 +253,14 @@ if __name__ == '__main__':
               fvFile.write(fv)
           if '-ffs' in sys.argv:
             try:
-              sFfs = sys.argv[sys.argv.index('-ffs') + 1]
+              sFfs = {'Name':   sys.argv[sys.argv.index('-ffs') + 1],
+                      'Offset': 0,
+                      'Size':   0}
             except:
               logging.error('No FFS specified')
               sys.exit()
+            else:
+              outputFvJson = False
 
         f.seek(blkOffset)
         ParseFvh(f.read(fvLength), fvDict['Fv' + str(fvCnt)], specifiedFfs=sFfs)
